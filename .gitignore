@@ -1,0 +1,7 @@
+# Python cache files.
+
+FitLib/*.pyc
+FitLib/__pycache__/
+
+FitLib/*/*.pyc
+FitLib/*/__pycache__/
