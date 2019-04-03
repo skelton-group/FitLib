@@ -26,9 +26,9 @@ def Polynomial(x, *p):
     
     return np.polyval(p, x)
 
-def CreateFuncPolynomial(p, p_fit = False, p_bounds = None):
+def CreatePolynomial(p, p_fit = None, p_bounds = None):
     """ Return a Function object representing a Polynomial function. """
     
     return CreateFunction(
-        Polynomial, p, ["x^{0}".format(len(p) - i) for i in range(0, len(p))], p_fit = p_fit, p_bounds = p_bounds
+        Polynomial, p, p_fit = p_fit, p_bounds = p_bounds
         )

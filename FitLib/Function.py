@@ -14,6 +14,8 @@
 
 import warnings
 
+import numpy as np
+
 
 # ---------------
 # Parameter Class
@@ -22,21 +24,26 @@ import warnings
 class Parameter:
     """ Class to encapsulate a function parameter. """
     
-    def __init__(self, val, label, fit_flag = True, bounds = None):
+    def __init__(self, val, label = None, fit_flag = True, bounds = None):
         """
         Class constructor.
         
         Args:
             val -- initial parameter value
-            label -- text label for parameter
+            label -- optional text label for parameter (default: None)
             fit_flag -- True if parameter should be optimised, False if it should be fixed (default: True)
-            bounds -- optionally specify a (p_min, p_max) range for parameter; either p_min or p_max can be None (default: None)
+            bounds -- optionally specify a (p_min, p_max) range for parameter; either of p_min or p_max can be None (default: None)
         """
         
         # Store data.
         
         self._val = float(val)
-        self._label = str(label)
+        
+        if label is not None:
+            label = str(label)
+        
+        self._label = label
+        
         self._fit_flag = bool(fit_flag)
         
         # If supplied, store fitting parameter bounds as a (p_min, p_max) tuple.
@@ -50,7 +57,11 @@ class Parameter:
             if p_max is not None:
                 p_max = float(p_max)
             
-            self._bounds = (p_min, p_max)
+            bounds = (p_min, p_max)
+        else:
+            bounds = (None, None)
+            
+        self._bounds = bounds
 
     @property
     def Value(self):
@@ -76,7 +87,7 @@ class Parameter:
     def Label(self):
         """ Get text label for parameter. """
         
-        return self._label
+        return self._label if self._label is not None else ""
     
     @property
     def FitFlag(self):
@@ -86,14 +97,14 @@ class Parameter:
     
     @property
     def Bounds(self):
-        """ Parameter bounds: (p_min, p_max) tuple or None if no bounds set. """
+        """ Parameter bounds: (p_min, p_max) tuple where a value of None indicates that no bounds are set.  """
         
         return self._bounds
 
 
-# --------------
-# Function Class
-# --------------
+# ----------------
+# Function Classes
+# ----------------
 
 class Function:
     """ Class to encapsulate a function. """
@@ -125,42 +136,85 @@ class Function:
             for param in params:
                 assert isinstance(param, Parameter)
         
-        param_labels = []
-        
-        for param in params:
-            if param.Label in param_labels:
-                raise Exception("Error: All function parameters must have a unique label.")
-            else:
-                param_labels.append(param.Label)
-        
         self._params = params
     
     def Evaluate(self, x):
         """ Evaluate the function with the current parameters over the supplied x values. """
         
-        return self._func(x, *[param.Value for param in self._params])
+        return np.asarray(
+            self._func(x, *[param.Value for param in self._params]), dtype = np.float64
+            )
     
-    def GetFitParams(self):
-        """ Get a list of the parameters with the fit flag set. """
+    def GetParamsList(self, fit_only = False):
+        """
+        Get a list of function parameters.
         
-        return [param for param in self._params if param.FitFlag]
+        Args:
+            fit_only -- if True, excludes parameters with FitFlag = False (default: False)
+        """
+        
+        return [param for param in self._params if param.FitFlag or not fit_only]
+
+class CompositeFunction(Function):
+    """ Class to encapsulate a composite function built from multiple Function objects. """
     
-    def GetFitBounds(self):
-        """ Get a list of bounds for parameters with the fit flag set. """
+    def __init__(self, funcs):
+        """
+        Class constructor.
         
-        return [param.Bounds for param in self._params if param.FitFlag]
+        Args:
+            funcs -- iterable of Function objects
+        
+        """
+        assert funcs is not None
+        
+        funcs = [func for func in funcs]
+        
+        for func in funcs:
+            assert isinstance(func, Function)
+        
+        self._funcs = funcs
     
-    def GetParamsDict(self):
-        """ Return a { label : value } dictionary for all function parameters, including those with the fit flag unset. """
+    def Evaluate(self, x):
+        """ Evaluate the function with the current parameters over the supplied x values. """
         
-        return { param.Label : param.Value for param in self._params }
+        # Convert x to a NumPy array and check.
+        
+        x = np.asarray(x, dtype = np.float64)
+        
+        n_x, = np.shape(x)
+        
+        assert n_x > 0
+        
+        # Evaluate stored functions.
+        
+        y = np.zeros_like(x)
+        
+        for func in self._funcs:
+            y += func.Evaluate(x)
+        
+        return y
+    
+    def GetParamsList(self, fit_only = False):
+        """
+        Get a list of function parameters.
+        
+        Args:
+            fit_only -- if True, excludes parameters with FitFlag = False (default: False)
+        """
+        params_list = []
+        
+        for func in self._funcs:
+            params_list += func.GetParamsList(fit_only = fit_only)
+        
+        return params_list
 
 
 # ----------------
 # Factory Function
 # ----------------
 
-def CreateFunction(func, p_init, p_labels, p_fit = None, p_bounds = None):
+def CreateFunction(func, p_init, p_labels = None, p_fit = None, p_bounds = None):
     """ Factory function to simplify creating Function objects. """
     
     assert func is not None
@@ -187,9 +241,10 @@ def CreateFunction(func, p_init, p_labels, p_fit = None, p_bounds = None):
     # In this case, the label is taken from p_labels, and the optional fit_flag and bounds are taken from p_fit and p_bounds if supplied.
     
     if wrap:
-        p_labels = [label for label in p_labels]
+        if p_labels is not None:
+            p_labels = [label for label in p_labels]
         
-        assert len(p_labels) == len(params)
+            assert len(p_labels) == len(params)
         
         if p_fit is not None:
             p_fit = [fit for fit in p_fit]
@@ -203,10 +258,10 @@ def CreateFunction(func, p_init, p_labels, p_fit = None, p_bounds = None):
         
         for i, param in enumerate(params):
             if not isinstance(param, Parameter):
-                p_init[i] = Parameter(
-                    param, p_labels[i], fit_flag = p_fit[i] if p_fit is not None else True, bounds = p_bounds[i] if p_bounds is not None else None
+                params[i] = Parameter(
+                    param, label = p_labels[i] if p_labels is not None else None, fit_flag = p_fit[i] if p_fit is not None else True, bounds = p_bounds[i] if p_bounds is not None else None
                     )
     
     # Return a function object for the supplied function and parameters.
     
-    return Function(func, p_init)
+    return Function(func, params)
