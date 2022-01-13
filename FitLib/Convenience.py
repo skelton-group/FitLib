@@ -76,7 +76,7 @@ def SweepInitialParameters(data, func, params_or_param_lists, param_labels = Non
     fit_results = []
     
     for p_init in itertools.product(*param_lists):
-        fit_func = CreateFunction(func, p_init, param_labels, param_fit_flags, param_bounds)
+        fit_func = CreateFunction(func, p_init, param_fit_flags, param_bounds)
         
         fitter = Fitter(data, fit_func, fit_range)
         fitter.Fit(**kwargs)

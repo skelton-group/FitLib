@@ -24,29 +24,32 @@ import numpy as np
 class Parameter:
     """ Class to encapsulate a function parameter. """
     
-    def __init__(self, val, label = None, fit_flag = True, bounds = None):
+    def __init__(self, val, bounds = None, fit_flag = True):
         """
         Class constructor.
         
         Args:
             val -- initial parameter value
-            label -- optional text label for parameter (default: None)
-            fit_flag -- True if parameter should be optimised, False if it should be fixed (default: True)
             bounds -- optionally specify a (p_min, p_max) range for parameter; either of p_min or p_max can be None (default: None)
+            fit_flag -- True if parameter should be optimised, False if it should be fixed (default: True)
         """
         
         # Store data.
         
         self._val = float(val)
+
+        self.Bounds = bounds        
+        self.FitFlag = fit_flag
+
+    @property
+    def Bounds(self):
+        """ Get a (p_min, p_max) tuple specifying the lower and upper limits of the parameter value (None indicates that no bounds are set). """
         
-        if label is not None:
-            label = str(label)
-        
-        self._label = label
-        
-        self._fit_flag = bool(fit_flag)
-        
-        # If supplied, store fitting parameter bounds as a (p_min, p_max) tuple.
+        return self._bounds
+    
+    @Bounds.setter
+    def Bounds(self, bounds):
+        """ Set the (p_min, p_max) parameter bounds; p_min/p_max = None or bounds = None can be set to indicate that no bounds should be applied. """
         
         if bounds is not None:
             p_min, p_max = bounds
@@ -57,11 +60,21 @@ class Parameter:
             if p_max is not None:
                 p_max = float(p_max)
             
-            bounds = (p_min, p_max)
+            self._bounds = (p_min, p_max)
         else:
-            bounds = (None, None)
-            
-        self._bounds = bounds
+            self._bounds = (None, None)
+    
+    @property
+    def FitFlag(self):
+        """ Get the flag indicating whether the parameter should be optimised. """
+        
+        return self._fit_flag
+    
+    @FitFlag.setter
+    def FitFlag(self, fit_flag):
+        """ Set the fit flag: True if the parameter is to be optimised, False otherwise. """
+        
+        self._fit_flag = bool(fit_flag)
 
     @property
     def Value(self):
@@ -83,24 +96,10 @@ class Parameter:
         
         self._val = val
     
-    @property
-    def Label(self):
-        """ Get text label for parameter. """
+    def Clone(self):
+        """ Return a copy of the current Parameter object. """
         
-        return self._label if self._label is not None else ""
-    
-    @property
-    def FitFlag(self):
-        """ Fit flag: True if parameter is to be optimised, False otherwise. """
-        
-        return self._fit_flag
-    
-    @property
-    def Bounds(self):
-        """ Parameter bounds: (p_min, p_max) tuple where a value of None indicates that no bounds are set.  """
-        
-        return self._bounds
-
+        return Parameter(self.Value, bounds = self.Bounds, fit_flag = self.FitFlag)
 
 # ----------------
 # Function Classes
@@ -154,6 +153,12 @@ class Function:
         """
         
         return [param for param in self._params if param.FitFlag or not fit_only]
+    
+    def CloneParamsList(self):
+        """ Create a (deep) copy of the current parameter list. """
+        
+        return [param.Clone() for param in self._params]
+
 
 class CompositeFunction(Function):
     """ Class to encapsulate a composite function built from multiple Function objects. """
@@ -178,6 +183,9 @@ class CompositeFunction(Function):
     def Evaluate(self, x):
         """ Evaluate the function with the current parameters over the supplied x values. """
         
+        return np.sum(self.EvaluateIndividual(x), axis = 0)
+    
+    def EvaluateIndividual(self, x):
         # Convert x to a NumPy array and check.
         
         x = np.asarray(x, dtype = np.float64)
@@ -188,12 +196,7 @@ class CompositeFunction(Function):
         
         # Evaluate stored functions.
         
-        y = np.zeros_like(x)
-        
-        for func in self._funcs:
-            y += func.Evaluate(x)
-        
-        return y
+        return [func.Evaluate(x) for func in self._funcs]
     
     def GetParamsList(self, fit_only = False):
         """
@@ -214,7 +217,7 @@ class CompositeFunction(Function):
 # Factory Function
 # ----------------
 
-def CreateFunction(func, p_init, p_labels = None, p_fit = None, p_bounds = None):
+def CreateFunction(func, p_init, p_fit = None, p_bounds = None):
     """ Factory function to simplify creating Function objects. """
     
     assert func is not None
@@ -241,11 +244,6 @@ def CreateFunction(func, p_init, p_labels = None, p_fit = None, p_bounds = None)
     # In this case, the label is taken from p_labels, and the optional fit_flag and bounds are taken from p_fit and p_bounds if supplied.
     
     if wrap:
-        if p_labels is not None:
-            p_labels = [label for label in p_labels]
-        
-            assert len(p_labels) == len(params)
-        
         if p_fit is not None:
             p_fit = [fit for fit in p_fit]
             
@@ -259,7 +257,7 @@ def CreateFunction(func, p_init, p_labels = None, p_fit = None, p_bounds = None)
         for i, param in enumerate(params):
             if not isinstance(param, Parameter):
                 params[i] = Parameter(
-                    param, label = p_labels[i] if p_labels is not None else None, fit_flag = p_fit[i] if p_fit is not None else True, bounds = p_bounds[i] if p_bounds is not None else None
+                    param, fit_flag = p_fit[i] if p_fit is not None else True, bounds = p_bounds[i] if p_bounds is not None else None
                     )
     
     # Return a function object for the supplied function and parameters.
